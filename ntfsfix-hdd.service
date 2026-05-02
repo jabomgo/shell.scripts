@@ -1,0 +1,11 @@
+[Unit]
+Description=NTFS dirty bit fix
+Before=local-fs.target
+DefaultDependencies=no
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/ntfsfix /dev/disk/by-uuid/A0067260067236FE
+
+[Install]
+WantedBy=local-fs.target

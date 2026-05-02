@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+
+# Arrumar gifs quebrados baixados pelos yt-dlp do Twitter e abre uma galeria na rede local
+set -e
+OUTDIR="$HOME/gifs.arrumados"
+mkdir -p "$OUTDIR"
+
+for input in "$@"; do
+    name=$(basename "$input")
+    tmp="$OUTDIR/.tmp_$name"
+    echo "Processando $input"
+    ffmpeg -loglevel error -y -i "$input" -c copy -movflags +faststart "$tmp"
+    file_date=$(date -r "$tmp" +%F)
+    datedir="$OUTDIR/$file_date"
+    mkdir -p "$datedir"
+    output="$datedir/$name"
+    mv "$tmp" "$output"
+    rm "$input"
+    echo "Arquivo corrigido: $output"
+done
+
+LOCAL_IP=$(ip a | awk '/inet / && !/127.0.0.1/ {print $2}' | cut -d/ -f1 | head -1)
+
+echo "Abrindo galeria em: $OUTDIR"
+echo "IP rede local em: $LOCAL_IP"
+GIF_DIR="$OUTDIR" python "$(dirname "$0")/gif_server.py"

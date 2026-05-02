@@ -1,0 +1,23 @@
+#!/bin/bash
+
+shopt -s nullglob
+
+for file in *; do
+    # Ignora diretórios
+    [ -d "$file" ] && continue
+
+    # Remove extensão
+    name="${file%.*}"
+
+    # Pega prefixo (antes de _ ou - ou espaço)
+    prefix=$(echo "$name" | sed -E 's/[_ -].*//')
+
+    # Se não tiver prefixo válido, pula
+    [ -z "$prefix" ] && continue
+
+    # Cria pasta se não existir
+    mkdir -p "$prefix"
+
+    # Move arquivo
+    mv -n "$file" "$prefix/"
+done

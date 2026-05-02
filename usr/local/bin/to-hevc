@@ -1,0 +1,98 @@
+#!/usr/bin/env bash
+# to-hevc — converte vídeos de um diretório para HEVC/H.265
+# Uso: to-hevc [--cpu] <origem> [destino]
+
+set -euo pipefail
+
+# --- Cores ---
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+RESET='\033[0m'
+
+USE_CPU=false
+POSITIONAL=()
+
+for arg in "$@"; do
+  if [[ "$arg" == "--cpu" ]]; then
+    USE_CPU=true
+  else
+    POSITIONAL+=("$arg")
+  fi
+done
+
+SRC="${POSITIONAL[0]:-}"
+DST="${POSITIONAL[1]:-}"
+
+# --- Validação ---
+if [[ -z "$SRC" ]]; then
+  echo -e "${BOLD}Uso:${RESET} $(basename "$0") [--cpu] <diretorio_origem> [diretorio_destino]"
+  exit 1
+fi
+
+if [[ ! -d "$SRC" ]]; then
+  echo -e "${RED}[ERRO]${RESET} '$SRC' não é um diretório válido."
+  exit 1
+fi
+
+if [[ -z "$DST" ]]; then
+  DST="$SRC/hevc"
+fi
+
+mkdir -p "$DST"
+
+# --- Encoder ---
+if [[ "$USE_CPU" == true ]]; then
+  ENCODER_ARGS=(-c:v libx265 -crf 28 -preset slow)
+  echo -e "${CYAN}[MODO]${RESET} CPU (libx265)"
+else
+  ENCODER_ARGS=(-c:v hevc_nvenc -rc vbr -cq 28)
+  echo -e "${CYAN}[MODO]${RESET} GPU Nvidia (hevc_nvenc)"
+fi
+
+# --- Conversão ---
+shopt -s nullglob
+FILES=("$SRC"/*.{mp4,mkv,avi,mov,webm,flv})
+
+if [[ ${#FILES[@]} -eq 0 ]]; then
+  echo -e "${YELLOW}[AVISO]${RESET} Nenhum vídeo encontrado em '$SRC'."
+  exit 0
+fi
+
+echo -e "${BOLD}Origem :${RESET} $SRC"
+echo -e "${BOLD}Destino:${RESET} $DST"
+echo -e "${BOLD}Arquivos encontrados:${RESET} ${#FILES[@]}"
+echo "---"
+
+for f in "${FILES[@]}"; do
+  name="$(basename "${f%.*}")"
+  out="$DST/${name}.mkv"
+
+  if [[ -f "$out" ]]; then
+    echo -e "${YELLOW}[SKIP]${RESET}  $name.mkv já existe no destino."
+    continue
+  fi
+
+  codec=$(ffprobe -v error -select_streams v:0 -show_entries stream=codec_name -of default=nw=1:nk=1 "$f")
+  if [[ "$codec" == "hevc" ]]; then
+    echo -e "${YELLOW}[SKIP]${RESET}  $(basename "$f") já está em HEVC."
+    continue
+  fi
+
+  echo -e "${BLUE}[>>>]${RESET}  Convertendo: $(basename "$f")"
+  ffmpeg -i "$f" \
+    -map 0 \
+    "${ENCODER_ARGS[@]}" \
+    -c:a copy \
+    -c:s copy \
+    "$out" \
+    -hide_banner -loglevel warning -stats
+
+  echo -e "${GREEN}[OK]${RESET}   $name.mkv"
+done
+
+echo "---"
+echo -e "${GREEN}${BOLD}Concluído.${RESET} Arquivos salvos em: $DST"

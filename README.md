@@ -1,4 +1,5 @@
 # Serviço para remover o dirty bit do windows travando HD de escrita
+Baixa o pacote: `ntfs-3g` (ex: sudo apt insntall ntfs-3g, sudo dnf install ntfs-3g,...)
 
 Pega UUID do disco que tá travando ao iniciar
 ```shell

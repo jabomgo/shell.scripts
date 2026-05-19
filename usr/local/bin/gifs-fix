@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-
-# Arrumar gifs quebrados baixados pelos yt-dlp do Twitter e abre uma galeria na rede local
 set -e
 OUTDIR="$HOME/gifs.arrumados"
 mkdir -p "$OUTDIR"
@@ -9,7 +7,14 @@ for input in "$@"; do
     name=$(basename "$input")
     tmp="$OUTDIR/.tmp_$name"
     echo "Processando $input"
-    ffmpeg -loglevel error -y -i "$input" -c copy -movflags +faststart "$tmp"
+    ffmpeg -loglevel error -y -i "$input" \
+        -c:v libx264 \
+        -crf 28 \
+        -preset fast \
+        -vf "scale='min(512,iw)':-2:flags=lanczos" \
+        -pix_fmt yuv420p \
+        -movflags +faststart \
+        "$tmp"
     file_date=$(date -r "$tmp" +%F)
     datedir="$OUTDIR/$file_date"
     mkdir -p "$datedir"

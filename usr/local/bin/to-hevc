@@ -59,10 +59,7 @@ if [[ ! -d "$SRC" ]]; then
 	exit 1
 fi
 
-if [[ -z "$DST" ]]; then
-  DST="$SRC/hevc"
-fi
-
+[[ -z "$DST" ]] && DST="$SRC/hevc"
 mkdir -p "$DST"
 
 # --- Encoder ---
@@ -127,6 +124,18 @@ for f in "${FILES[@]}"; do
 
 	orig_size=$(du -sh "$f" | cut -f1)
 	echo -e "${BLUE}[>>>]${RESET}  [$count/$total] $(basename "$f")  (${orig_size})"
+
+	if ! ffmpeg -i "$f" \
+		-map 0 \
+		"${ENCODER_ARGS[@]}" \
+		-c:a copy \
+		-c:s copy \
+		"$out" \
+		-hide_banner -loglevel warning -stats 2>&1; then
+		printf "\n"
+		echo -e "${RED}[ERRO]${RESET}  Falha ao converter $(basename "$f")."
+		continue
+	fi
 
 	printf "\n"
 	new_size=$(du -sh "$out" | cut -f1)

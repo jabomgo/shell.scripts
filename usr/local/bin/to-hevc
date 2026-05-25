@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# to-hevc — converte vídeos de um diretório para HEVC/H.265
+# to-hevc — converte vídeos para HEVC/H.265 (arquivo único ou diretório)
 # Uso: to-hevc [--cpu] [--amd] [--recursive] [--preset=<preset>] [--cq=<valor>] <origem> [destino]
 
 set -uo pipefail
@@ -36,7 +36,7 @@ DST="${POSITIONAL[1]:-}"
 
 # --- Validação ---
 if [[ -z "$SRC" ]]; then
-	echo -e "${BOLD}Uso:${RESET} $(basename "$0") [--cpu] [--amd] [--recursive] [--preset=<preset>] [--cq=<valor>] <diretorio_origem> [diretorio_destino]"
+	echo -e "${BOLD}Uso:${RESET} $(basename "$0") [--cpu] [--amd] [--recursive] [--preset=<preset>] [--cq=<valor>] <origem> [destino]"
 	echo
 	echo -e "${BOLD}Encoders:${RESET}"
 	echo -e "  (padrão)   GPU Nvidia  hevc_nvenc   presets: p1..p7, slow, medium, fast"
@@ -54,14 +54,6 @@ if [[ "$USE_CPU" == true && "$USE_AMD" == true ]]; then
 	exit 1
 fi
 
-if [[ ! -d "$SRC" ]]; then
-	echo -e "${RED}[ERRO]${RESET} '$SRC' não é um diretório válido."
-	exit 1
-fi
-
-[[ -z "$DST" ]] && DST="$SRC/hevc"
-mkdir -p "$DST"
-
 # --- Encoder ---
 echo "---"
 if [[ "$USE_CPU" == true ]]; then
@@ -78,7 +70,79 @@ else
 	echo -e "${CYAN}[MODO]${RESET} GPU Nvidia — hevc_nvenc — preset: ${BOLD}$PRESET${RESET}"
 fi
 
-# --- Coleta de arquivos ---
+# --- Função de conversão ---
+convert_file() {
+	local f="$1"
+	local out="$2"
+
+	local codec
+	codec=$(ffprobe -v error -select_streams v:0 \
+		-show_entries stream=codec_name \
+		-of default=nw=1:nk=1 "$f")
+	if [[ "$codec" == "hevc" ]]; then
+		echo -e "${YELLOW}[SKIP]${RESET}  $(basename "$f") já é HEVC."
+		return 1
+	fi
+
+	local orig_size
+	orig_size=$(du -sh "$f" | cut -f1)
+	echo -e "${BLUE}[>>>]${RESET}  $(basename "$f")  (${orig_size})"
+
+	if ! ffmpeg -i "$f" \
+		-map 0 \
+		"${ENCODER_ARGS[@]}" \
+		-c:a copy \
+		-c:s copy \
+		"$out" \
+		-hide_banner -loglevel warning -stats 2>&1; then
+		printf "\n"
+		echo -e "${RED}[ERRO]${RESET}  Falha ao converter $(basename "$f")."
+		rm -f "$out"
+		return 2
+	fi
+
+	printf "\n"
+	local new_size
+	new_size=$(du -sh "$out" | cut -f1)
+	echo -e "${GREEN}[OK]${RESET} $(basename "$out") (${orig_size} → ${new_size})"
+	return 0
+}
+
+# --- Arquivo único ---
+if [[ -f "$SRC" ]]; then
+	if [[ -z "$DST" ]]; then
+		DST="$(dirname "$SRC")"
+	fi
+	mkdir -p "$DST"
+	name="$(basename "${SRC%.*}")"
+	out="$DST/${name}.mkv"
+
+	echo -e "${BOLD}Origem :${RESET} $SRC"
+	echo -e "${BOLD}Destino:${RESET} $out"
+	echo -e "${BOLD}CQ/CRF :${RESET} $CQ"
+	echo "---"
+
+	if [[ -f "$out" ]]; then
+		echo -e "${YELLOW}[SKIP]${RESET}  $name.mkv já existe."
+		exit 0
+	fi
+
+	convert_file "$SRC" "$out"
+	exit $?
+fi
+
+# --- Diretório ---
+if [[ ! -d "$SRC" ]]; then
+	echo -e "${RED}[ERRO]${RESET} '$SRC' não é um arquivo ou diretório válido."
+	exit 1
+fi
+
+if [[ -z "$DST" ]]; then
+	DST="$SRC/hevc"
+fi
+
+mkdir -p "$DST"
+
 shopt -s nullglob
 if [[ "$RECURSIVE" == true ]]; then
 	mapfile -t FILES < <(find "$SRC" -type f \( \
@@ -114,33 +178,8 @@ for f in "${FILES[@]}"; do
 		continue
 	fi
 
-	codec=$(ffprobe -v error -select_streams v:0 \
-		-show_entries stream=codec_name \
-		-of default=nw=1:nk=1 "$f")
-	if [[ "$codec" == "hevc" ]]; then
-		echo -e "${YELLOW}[SKIP]${RESET}  [$count/$total] $(basename "$f") já é HEVC."
-		continue
-	fi
-
-	orig_size=$(du -sh "$f" | cut -f1)
-	echo -e "${BLUE}[>>>]${RESET}  [$count/$total] $(basename "$f")  (${orig_size})"
-
-	if ! ffmpeg -i "$f" \
-		-map 0 \
-		"${ENCODER_ARGS[@]}" \
-		-c:a copy \
-		-c:s copy \
-		"$out" \
-		-hide_banner -loglevel warning -stats 2>&1; then
-		printf "\n"
-		echo -e "${RED}[ERRO]${RESET}  Falha ao converter $(basename "$f")."
-		continue
-	fi
-
-	printf "\n"
-	new_size=$(du -sh "$out" | cut -f1)
-	((done_count++))
-	echo -e "${GREEN}[OK]${RESET} $name.mkv (${orig_size} → ${new_size})"
+	echo -ne "${BLUE}[>>>]${RESET}  [$count/$total] "
+	convert_file "$f" "$out" && ((done_count++))
 done
 
 echo "---"
